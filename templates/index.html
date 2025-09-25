@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Processor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Email Processor</h1>
+        
+        <div class="controls">
+            <div class="status">
+                <span>Status: </span>
+                <span id="status" class="status-{{ 'processing' if is_processing else 'stopped' }}">
+                    {{ 'Processing' if is_processing else 'Stopped' }}
+                </span>
+                {% if last_processed %}
+                <span id="lastProcessed"> | Last processed: {{ last_processed }}</span>
+                {% endif %}
+            </div>
+            
+            <div class="buttons">
+                <button id="startBtn" onclick="startProcessing()" {{ 'disabled' if is_processing }}>Start Auto-Processing</button>
+                <button id="stopBtn" onclick="stopProcessing()" {{ 'disabled' if not is_processing }}>Stop Auto-Processing</button>
+                <button onclick="processOnce()">Import All Emails</button>
+                <button onclick="exportExcel()">Export to Excel</button>
+                <button onclick="refreshData()">Refresh</button>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Search contacts..." onkeyup="searchContacts()">
+        </div>
+
+        <div class="stats">
+            <h3>Database Statistics</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Total Contacts:</span>
+                    <span class="stat-value" id="totalContacts">{{ stats.total_contacts }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Today:</span>
+                    <span class="stat-value" id="todayContacts">{{ stats.today_contacts }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">This Week:</span>
+                    <span class="stat-value" id="weekContacts">{{ stats.week_contacts }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="contacts">
+            <h3>Contacts (<span id="contactsCount">{{ contacts|length }}</span>)</h3>
+            <div class="contacts-list" id="contactsList">
+                {% for contact in contacts %}
+                <div class="contact-card">
+                    <div class="contact-header">
+                        <h4>{{ contact.name }}</h4>
+                        <span class="contact-date">{{ contact.created_at }}</span>
+                    </div>
+                    <div class="contact-details">
+                        <p><strong>Address:</strong> {{ contact.address }}</p>
+                        <p><strong>Postcode:</strong> {{ contact.postcode }}</p>
+                        <p><strong>Skills:</strong> {{ contact.skills }}</p>
+                        <p><strong>Other:</strong> {{ contact.other }}</p>
+                        <p><strong>From:</strong> {{ contact.email_sender }}</p>
+                        <p><strong>Subject:</strong> {{ contact.email_subject }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateStatus(status, lastProcessed) {
+            const statusElem = document.getElementById('status');
+            const lastProcessedElem = document.getElementById('lastProcessed');
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            statusElem.textContent = status ? 'Processing' : 'Stopped';
+            statusElem.className = status ? 'status-processing' : 'status-stopped';
+            
+            if (lastProcessed) {
+                lastProcessedElem.textContent = ' | Last processed: ' + lastProcessed;
+            }
+            
+            startBtn.disabled = status;
+            stopBtn.disabled = !status;
+        }
+
+        async function startProcessing() {
+            const response = await fetch('/start_processing', {method: 'POST'});
+            const data = await response.json();
+            if (data.status === 'started') {
+                updateStatus(true);
+            }
+        }
+
+        async function stopProcessing() {
+            const response = await fetch('/stop_processing', {method: 'POST'});
+            const data = await response.json();
+            if (data.status === 'stopped') {
+                updateStatus(false);
+            }
+        }
+
+        async function processOnce() {
+            const response = await fetch('/process_once', {method: 'POST'});
+            const data = await response.json();
+            if (data.status === 'success') {
+                alert(`Processed ${data.processed} contacts out of ${data.total_found} found emails`);
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+            refreshData();
+        }
+
+        // Add this new function for full import if you want a separate button
+        async function importAllEmails() {
+            const response = await fetch('/import_all', {method: 'POST'});
+            const data = await response.json();
+            if (data.status === 'success') {
+                alert(`Imported ${data.processed} contacts out of ${data.total_found} found emails`);
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+            refreshData();
+        }
+
+        // Export to Excel function
+        function exportExcel() {
+            const searchTerm = document.getElementById('searchInput').value;
+            if (searchTerm) {
+                window.open('/export_excel_filtered?q=' + encodeURIComponent(searchTerm));
+            } else {
+                window.open('/export_excel');
+            }
+        }
+
+        async function refreshData() {
+            // Refresh stats
+            const statsResponse = await fetch('/stats');
+            const stats = await statsResponse.json();
+            document.getElementById('totalContacts').textContent = stats.total_contacts;
+            document.getElementById('todayContacts').textContent = stats.today_contacts;
+            document.getElementById('weekContacts').textContent = stats.week_contacts;
+            
+            // Refresh contacts
+            searchContacts();
+        }
+
+        async function searchContacts() {
+            const searchTerm = document.getElementById('searchInput').value;
+            const response = await fetch('/search?q=' + encodeURIComponent(searchTerm));
+            const contacts = await response.json();
+            
+            const contactsList = document.getElementById('contactsList');
+            const contactsCount = document.getElementById('contactsCount');
+            
+            // Update contacts count
+            contactsCount.textContent = contacts.length;
+            
+            // Generate HTML for contacts with proper formatting
+            contactsList.innerHTML = contacts.map(contact => `
+                <div class="contact-card">
+                    <div class="contact-header">
+                        <h4>${escapeHtml(contact.name || '')}</h4>
+                        <span class="contact-date">${escapeHtml(contact.created_at || '')}</span>
+                    </div>
+                    <div class="contact-details">
+                        <p><strong>Address:</strong> ${escapeHtml(contact.address || '')}</p>
+                        <p><strong>Postcode:</strong> ${escapeHtml(contact.postcode || '')}</p>
+                        <p><strong>Skills:</strong> ${escapeHtml(contact.skills || '')}</p>
+                        <p><strong>Other:</strong> ${escapeHtml(contact.other || '')}</p>
+                        <p><strong>From:</strong> ${escapeHtml(contact.email_sender || '')}</p>
+                        <p><strong>Subject:</strong> ${escapeHtml(contact.email_subject || '')}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Helper function to escape HTML to prevent XSS and formatting issues
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Auto-refresh stats every 30 seconds
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html>
