@@ -28,54 +28,6 @@ HOST = os.getenv("host")
 PORT = os.getenv("port")
 DBNAME = os.getenv("dbname")
 
-def get_connection():
-    """Create and return a database connection"""
-    try:
-        conn = psycopg2.connect(
-        user=USER,
-        password=PASSWORD,
-        host=HOST,
-        port=PORT,
-        dbname=DBNAME
-    )
-        return conn
-    except psycopg2.Error as e:
-        print(f"Error connecting to database: {e}")
-        return None
-
-# 1. INSERT SINGLE RECORD
-def insert_single_record():
-    conn = get_connection()
-    if not conn:
-        return
-    
-    try:
-        cur = conn.cursor()
-        
-        # Using parameterized query (safe from SQL injection)
-        insert_query = """
-        INSERT INTO usersinfo (name, address, postcode, skills, other, email_sender, email_subject, email_date) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id;
-        """
-        
-        data = ('Jack Kay', '2 Green Drive', 'PR1 0RD', 'DevOps', 'Other Example', 'example@hotmail.co.uk', 'Subject Application', datetime.now())
-        
-        cur.execute(insert_query, data)
-        new_id = cur.fetchone()[0]  # Get the returned ID
-        
-        conn.commit()
-        print(f"Record inserted with ID: {new_id}")
-        
-    except psycopg2.Error as e:
-        conn.rollback()
-        print(f"Error inserting record: {e}")
-    finally:
-        cur.close()
-        conn.close()
-
-insert_single_record()
-
 class GmailReader:
     """A class to handle Gmail API operations for reading and parsing emails."""
     
@@ -334,42 +286,55 @@ class GmailReader:
             return []
 
 
-def save_contacts_to_database(contacts: List[Dict[str, str]], db_path: str = "contacts.db") -> int:
+def save_contacts_to_database(contacts: List[Dict[str, str]]) -> int:
     """Save multiple contacts to the SQLite database."""
 
-    
     saved_count = 0
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            
-            for contact_info in contacts:
-                # Use message_id for uniqueness to avoid duplicates
-                cursor.execute('''
-                    INSERT OR IGNORE INTO contacts 
-                    (name, address, postcode, skills, other, email_sender, email_subject, email_date, message_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    contact_info.get('name', ''),
-                    contact_info.get('address', ''),
-                    contact_info.get('postcode', ''),
-                    contact_info.get('skills', ''),
-                    contact_info.get('other', ''),
-                    contact_info.get('email_sender', ''),
-                    contact_info.get('email_subject', ''),
-                    contact_info.get('email_date', ''),
-                    contact_info.get('message_id', '')  # Use message_id for uniqueness
-                ))
-                
-                if cursor.rowcount > 0:
-                    saved_count += 1
-            
-            conn.commit()
-            
-    except sqlite3.Error as e:
-        print(f"Database save error: {e}")
+        connection = psycopg2.connect(
+        user=USER,
+        password=PASSWORD,
+        host=HOST,
+        port=PORT,
+        dbname=DBNAME
+    )
+        con = connection
+    except psycopg2.Error as e:
+        print(f"Error connecting to database: {e}")
+        return None
+
+    cur = con.cursor()    
+
+    for contact_info in contacts:
+        # Use message_id for uniqueness to avoid duplicates
+        insert_query = '''
+                    INSERT INTO usersinfo (name, address, postcode, skills, other, email_sender, email_subject, email_date) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                    '''
+        data = (
+                contact_info.get('name', ''),
+                contact_info.get('address', ''),
+                contact_info.get('postcode', ''),
+                contact_info.get('skills', ''),
+                contact_info.get('other', ''),
+                contact_info.get('email_sender', ''),
+                contact_info.get('email_subject', ''),
+                contact_info.get('email_date', ''),
+            )
+        
     
+        cur.execute(insert_query, data)
+        new_id = cur.fetchone()[0]  # Get the returned ID
+        
+        con.commit()
+        print(f"Record inserted with ID: {new_id}")
+            
+    
+    cur.close()
+    con.close()
     return saved_count
+
 
 
 def main():
@@ -386,7 +351,7 @@ def main():
             print(f"Found {len(contacts)} new contact(s)")
             
             # Save to database
-            saved_count = save_contacts_to_database(contacts, "contacts.db")
+            saved_count = save_contacts_to_database(contacts)
             print(f"Saved {saved_count} new contacts to database")
             
         else:
