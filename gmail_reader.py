@@ -6,19 +6,75 @@ import sqlite3
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Optional, Dict, Any, List
-
+from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import psycopg2
+from supabase import create_client
 
 try:
+    load_dotenv()
     import pandas as pd
     EXCEL_SUPPORT = True
 except ImportError:
     EXCEL_SUPPORT = False
     print("Warning: pandas library not installed. Excel export functionality will be disabled.")
+    
+USER = os.getenv("user")
+PASSWORD = os.getenv("password")
+HOST = os.getenv("host")
+PORT = os.getenv("port")
+DBNAME = os.getenv("dbname")
 
+def get_connection():
+    """Create and return a database connection"""
+    try:
+        conn = psycopg2.connect(
+        user=USER,
+        password=PASSWORD,
+        host=HOST,
+        port=PORT,
+        dbname=DBNAME
+    )
+        return conn
+    except psycopg2.Error as e:
+        print(f"Error connecting to database: {e}")
+        return None
+
+# 1. INSERT SINGLE RECORD
+def insert_single_record():
+    conn = get_connection()
+    if not conn:
+        return
+    
+    try:
+        cur = conn.cursor()
+        
+        # Using parameterized query (safe from SQL injection)
+        insert_query = """
+        INSERT INTO users (name, email, age, created_at) 
+        VALUES (%s, %s, %s, %s)
+        RETURNING id;
+        """
+        
+        data = ('John Doe', 'john@example.com', 30, datetime.now())
+        
+        cur.execute(insert_query, data)
+        new_id = cur.fetchone()[0]  # Get the returned ID
+        
+        conn.commit()
+        print(f"Record inserted with ID: {new_id}")
+        
+    except psycopg2.Error as e:
+        conn.rollback()
+        print(f"Error inserting record: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+insert_single_record()
 
 class GmailReader:
     """A class to handle Gmail API operations for reading and parsing emails."""
@@ -374,6 +430,7 @@ def print_database_stats(db_path: str = "contacts.db") -> None:
     print(f"Total Contacts: {stats['total_contacts']}")
     print(f"New Today: {stats['today_contacts']}")
     print(f"This Week: {stats['week_contacts']}")
+    print(os.getenv("SUPABASE_URL"))
     print("=" * 30)
 
 
@@ -464,7 +521,7 @@ def main():
         
         # Check for new emails in the last 30 minutes
         print("Checking for new emails in the last 30 minutes...")
-        contacts = gmail_reader.parse_recent_contact_emails(30)
+        contacts = gmail_reader.parse_recent_contact_emails(7200)
         
         if contacts:
             print(f"Found {len(contacts)} new contact(s)")
