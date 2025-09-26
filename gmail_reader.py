@@ -54,12 +54,12 @@ def insert_single_record():
         
         # Using parameterized query (safe from SQL injection)
         insert_query = """
-        INSERT INTO users (name, email, age, created_at) 
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO usersinfo (name, address, postcode, skills, other, email_sender, email_subject, email_date) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id;
         """
         
-        data = ('John Doe', 'john@example.com', 30, datetime.now())
+        data = ('Jack Kay', '2 Green Drive', 'PR1 0RD', 'DevOps', 'Other Example', 'example@hotmail.co.uk', 'Subject Application', datetime.now())
         
         cur.execute(insert_query, data)
         new_id = cur.fetchone()[0]  # Get the returned ID
